@@ -71,22 +71,13 @@ function runFfmpeg(inputPath, outputPath) {
       "-map", "0:a?",
       "-sn",
 
-      "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-crf", "18",
-      "-pix_fmt", "yuv420p",
-      "-profile:v", "high",
-      "-level", "4.2",
-
-      "-c:a", "aac",
-      "-b:a", "192k",
-      "-ac", "2",
-
+      "-c", "copy",
       "-movflags", "+faststart",
+
       outputPath
     ]
 
-    console.log("FFmpeg command:", args.join(" "))
+    console.log("FFmpeg remux command:", args.join(" "))
 
     const ffmpeg = spawn("ffmpeg", args)
 
@@ -124,6 +115,7 @@ app.get("/", (req, res) => {
   res.json({
     ok: true,
     service: "Matbatuk video converter",
+    mode: "MOV to MP4 without quality loss",
     usage: "POST /convert with multipart field file"
   })
 })
@@ -145,13 +137,13 @@ app.post("/convert", upload.single("file"), async (req, res) => {
   try {
     console.log("Original file:", req.file.originalname)
     console.log("Original size MB:", (req.file.size / 1024 / 1024).toFixed(2))
-    console.log("Converting high quality:", req.file.originalname)
+    console.log("Remuxing MOV to MP4 without re-encoding:", req.file.originalname)
 
     await runFfmpeg(inputPath, outputPath)
 
     const outputStats = await fs.promises.stat(outputPath)
 
-    console.log("Conversion done:", outputName)
+    console.log("MP4 created:", outputName)
     console.log("Output size MB:", (outputStats.size / 1024 / 1024).toFixed(2))
 
     const now = new Date().toISOString().slice(0, 10)
