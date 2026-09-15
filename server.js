@@ -8,10 +8,25 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
 
 const app = express()
 
+const allowedOrigins = [
+  "https://matbatukapp.netlify.app",
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:5175"
+]
+
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "https://matbatukapp.netlify.app")
+  const origin = req.headers.origin
+
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin)
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*")
+  }
+
+  res.setHeader("Vary", "Origin")
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Origin, X-Requested-With")
   res.setHeader("Access-Control-Max-Age", "86400")
 
   if (req.method === "OPTIONS") {
@@ -72,8 +87,11 @@ function runFfmpeg(inputPath, outputPath) {
     ffmpeg.on("error", reject)
 
     ffmpeg.on("close", code => {
-      if (code === 0) resolve()
-      else reject(new Error(stderr || `ffmpeg exited with ${code}`))
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(stderr || `ffmpeg exited with ${code}`))
+      }
     })
   })
 }
@@ -98,7 +116,10 @@ app.post("/convert", upload.single("file"), async (req, res) => {
   console.log("POST /convert received")
 
   if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded" })
+    return res.status(400).json({
+      ok: false,
+      error: "No file uploaded"
+    })
   }
 
   const inputPath = req.file.path
@@ -124,16 +145,22 @@ app.post("/convert", upload.single("file"), async (req, res) => {
 
     const publicBase = R2_PUBLIC_URL.replace(/\/$/, "")
 
+    const finalUrl = `${publicBase}/${key}`
+
+    console.log("Uploaded to R2:", finalUrl)
+
     res.json({
       ok: true,
       key,
-      url: `${publicBase}/${key}`,
+      url: finalUrl,
       contentType: "video/mp4",
       fileName: outputName
     })
   } catch (error) {
     console.error("Conversion failed:", error)
+
     res.status(500).json({
+      ok: false,
       error: "Conversion failed",
       message: error.message
     })
@@ -141,6 +168,16 @@ app.post("/convert", upload.single("file"), async (req, res) => {
     fs.promises.unlink(inputPath).catch(() => {})
     fs.promises.unlink(outputPath).catch(() => {})
   }
+})
+
+app.use((err, req, res, next) => {
+  console.error("Server error:", err)
+
+  res.status(500).json({
+    ok: false,
+    error: "Server error",
+    message: err.message
+  })
 })
 
 const port = process.env.PORT || 3000
