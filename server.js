@@ -9,15 +9,16 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
 const app = express()
 
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`)
-  next()
-})
+  res.setHeader("Access-Control-Allow-Origin", "https://matbatukapp.netlify.app")
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
+  res.setHeader("Access-Control-Max-Age", "86400")
 
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*")
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-  if (req.method === "OPTIONS") return res.sendStatus(200)
+  if (req.method === "OPTIONS") {
+    return res.status(200).end()
+  }
+
+  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`)
   next()
 })
 
