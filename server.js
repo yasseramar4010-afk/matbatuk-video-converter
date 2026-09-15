@@ -37,6 +37,18 @@ app.use((req, res, next) => {
   next()
 })
 
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received: server is being stopped by Render")
+})
+
+process.on("uncaughtException", err => {
+  console.error("Uncaught exception:", err)
+})
+
+process.on("unhandledRejection", err => {
+  console.error("Unhandled rejection:", err)
+})
+
 const upload = multer({
   dest: "/tmp",
   limits: {
@@ -66,27 +78,45 @@ function runFfmpeg(inputPath, outputPath) {
     const args = [
       "-y",
       "-i", inputPath,
+
+      "-map", "0:v:0",
+      "-map", "0:a?",
+      "-sn",
+
+      "-vf", "scale='min(1080,iw)':-2",
       "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-crf", "23",
+      "-preset", "ultrafast",
+      "-crf", "24",
       "-pix_fmt", "yuv420p",
+      "-profile:v", "baseline",
+      "-level", "3.1",
+      "-threads", "1",
+
       "-c:a", "aac",
       "-b:a", "128k",
+      "-ac", "2",
+
       "-movflags", "+faststart",
       outputPath
     ]
+
+    console.log("FFmpeg command:", args.join(" "))
 
     const ffmpeg = spawn("ffmpeg", args)
 
     let stderr = ""
 
     ffmpeg.stderr.on("data", data => {
-      stderr += data.toString()
+      const text = data.toString()
+      stderr += text
+      console.log(text.slice(-500))
     })
 
     ffmpeg.on("error", reject)
 
     ffmpeg.on("close", code => {
+      console.log("FFmpeg closed with code:", code)
+
       if (code === 0) {
         resolve()
       } else {
@@ -127,14 +157,21 @@ app.post("/convert", upload.single("file"), async (req, res) => {
   const outputPath = path.join("/tmp", outputName)
 
   try {
+    console.log("Original file:", req.file.originalname)
+    console.log("Original size MB:", (req.file.size / 1024 / 1024).toFixed(2))
     console.log("Converting:", req.file.originalname)
 
     await runFfmpeg(inputPath, outputPath)
 
+    const outputStats = await fs.promises.stat(outputPath)
+
     console.log("Conversion done:", outputName)
+    console.log("Output size MB:", (outputStats.size / 1024 / 1024).toFixed(2))
 
     const now = new Date().toISOString().slice(0, 10)
     const key = `videos/${now}/${outputName}`
+
+    console.log("Uploading to R2:", key)
 
     await s3.send(new PutObjectCommand({
       Bucket: R2_BUCKET,
@@ -144,7 +181,6 @@ app.post("/convert", upload.single("file"), async (req, res) => {
     }))
 
     const publicBase = R2_PUBLIC_URL.replace(/\/$/, "")
-
     const finalUrl = `${publicBase}/${key}`
 
     console.log("Uploaded to R2:", finalUrl)
