@@ -1,5 +1,4 @@
 import express from "express"
-import cors from "cors"
 import multer from "multer"
 import fs from "fs"
 import path from "path"
@@ -18,18 +17,14 @@ app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*")
   res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
   res.header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+  if (req.method === "OPTIONS") return res.sendStatus(200)
   next()
 })
-
-app.options("*", (req, res) => {
-  res.sendStatus(200)
-})
-}))
 
 const upload = multer({
   dest: "/tmp",
   limits: {
-    fileSize: 1024 * 1024 * 700 // 700MB
+    fileSize: 1024 * 1024 * 700
   }
 })
 
@@ -41,23 +36,13 @@ const {
   R2_PUBLIC_URL
 } = process.env
 
-function requiredEnv() {
-  const missing = []
-  if (!R2_ACCOUNT_ID) missing.push("R2_ACCOUNT_ID")
-  if (!R2_ACCESS_KEY_ID) missing.push("R2_ACCESS_KEY_ID")
-  if (!R2_SECRET_ACCESS_KEY) missing.push("R2_SECRET_ACCESS_KEY")
-  if (!R2_BUCKET) missing.push("R2_BUCKET")
-  if (!R2_PUBLIC_URL) missing.push("R2_PUBLIC_URL")
-  return missing
-}
-
 const s3 = new S3Client({
   region: "auto",
-  endpoint: R2_ACCOUNT_ID ? `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : undefined,
-  credentials: R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY ? {
+  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
     accessKeyId: R2_ACCESS_KEY_ID,
     secretAccessKey: R2_SECRET_ACCESS_KEY
-  } : undefined
+  }
 })
 
 function runFfmpeg(inputPath, outputPath) {
@@ -78,6 +63,7 @@ function runFfmpeg(inputPath, outputPath) {
     const ffmpeg = spawn("ffmpeg", args)
 
     let stderr = ""
+
     ffmpeg.stderr.on("data", data => {
       stderr += data.toString()
     })
@@ -108,16 +94,10 @@ app.get("/", (req, res) => {
 })
 
 app.post("/convert", upload.single("file"), async (req, res) => {
-  const missing = requiredEnv()
-  if (missing.length) {
-    return res.status(500).json({
-      error: "Missing environment variables",
-      missing
-    })
-  }
+  console.log("POST /convert received")
 
   if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded. Use field name: file" })
+    return res.status(400).json({ error: "No file uploaded" })
   }
 
   const inputPath = req.file.path
@@ -125,16 +105,19 @@ app.post("/convert", upload.single("file"), async (req, res) => {
   const outputPath = path.join("/tmp", outputName)
 
   try {
+    console.log("Converting:", req.file.originalname)
+
     await runFfmpeg(inputPath, outputPath)
+
+    console.log("Conversion done:", outputName)
 
     const now = new Date().toISOString().slice(0, 10)
     const key = `videos/${now}/${outputName}`
-    const body = fs.createReadStream(outputPath)
 
     await s3.send(new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: key,
-      Body: body,
+      Body: fs.createReadStream(outputPath),
       ContentType: "video/mp4"
     }))
 
@@ -148,7 +131,7 @@ app.post("/convert", upload.single("file"), async (req, res) => {
       fileName: outputName
     })
   } catch (error) {
-    console.error(error)
+    console.error("Conversion failed:", error)
     res.status(500).json({
       error: "Conversion failed",
       message: error.message
@@ -160,6 +143,7 @@ app.post("/convert", upload.single("file"), async (req, res) => {
 })
 
 const port = process.env.PORT || 3000
+
 app.listen(port, () => {
   console.log(`Matbatuk converter running on port ${port}`)
 })
