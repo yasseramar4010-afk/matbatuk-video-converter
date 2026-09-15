@@ -37,22 +37,10 @@ app.use((req, res, next) => {
   next()
 })
 
-process.on("SIGTERM", () => {
-  console.log("SIGTERM received: server is being stopped by Render")
-})
-
-process.on("uncaughtException", err => {
-  console.error("Uncaught exception:", err)
-})
-
-process.on("unhandledRejection", err => {
-  console.error("Unhandled rejection:", err)
-})
-
 const upload = multer({
   dest: "/tmp",
   limits: {
-    fileSize: 1024 * 1024 * 700
+    fileSize: 1024 * 1024 * 1000
   }
 })
 
@@ -83,17 +71,15 @@ function runFfmpeg(inputPath, outputPath) {
       "-map", "0:a?",
       "-sn",
 
-      "-vf", "scale='min(1080,iw)':-2",
       "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-crf", "24",
+      "-preset", "veryfast",
+      "-crf", "18",
       "-pix_fmt", "yuv420p",
-      "-profile:v", "baseline",
-      "-level", "3.1",
-      "-threads", "1",
+      "-profile:v", "high",
+      "-level", "4.2",
 
       "-c:a", "aac",
-      "-b:a", "128k",
+      "-b:a", "192k",
       "-ac", "2",
 
       "-movflags", "+faststart",
@@ -159,7 +145,7 @@ app.post("/convert", upload.single("file"), async (req, res) => {
   try {
     console.log("Original file:", req.file.originalname)
     console.log("Original size MB:", (req.file.size / 1024 / 1024).toFixed(2))
-    console.log("Converting:", req.file.originalname)
+    console.log("Converting high quality:", req.file.originalname)
 
     await runFfmpeg(inputPath, outputPath)
 
